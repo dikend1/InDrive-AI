@@ -16,4 +16,6 @@ venv/
 *.so
 *.dylib
 *.pt
+
+# MacOS
 .DS_Store
