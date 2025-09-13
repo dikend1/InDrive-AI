@@ -1,0 +1,443 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Car Condition Analyzer - Тест API</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+        
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 15px;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.1);
+            overflow: hidden;
+        }
+        
+        .header {
+            background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+            color: white;
+            padding: 30px;
+            text-align: center;
+        }
+        
+        .header h1 {
+            font-size: 2.5rem;
+            margin-bottom: 10px;
+        }
+        
+        .header p {
+            font-size: 1.1rem;
+            opacity: 0.9;
+        }
+        
+        .main-content {
+            padding: 40px;
+        }
+        
+        .upload-section {
+            border: 3px dashed #ddd;
+            border-radius: 10px;
+            padding: 40px;
+            text-align: center;
+            margin-bottom: 30px;
+            transition: all 0.3s ease;
+        }
+        
+        .upload-section.dragover {
+            border-color: #4facfe;
+            background: #f8f9ff;
+        }
+        
+        .upload-section input[type="file"] {
+            display: none;
+        }
+        
+        .upload-btn {
+            background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+            color: white;
+            border: none;
+            padding: 15px 30px;
+            border-radius: 25px;
+            font-size: 1.1rem;
+            cursor: pointer;
+            transition: transform 0.2s ease;
+        }
+        
+        .upload-btn:hover {
+            transform: translateY(-2px);
+        }
+        
+        .file-info {
+            margin: 20px 0;
+            padding: 15px;
+            background: #f8f9fa;
+            border-radius: 8px;
+            display: none;
+        }
+        
+        .analyze-btn {
+            background: linear-gradient(135deg, #43e97b 0%, #38f9d7 100%);
+            color: white;
+            border: none;
+            padding: 15px 40px;
+            border-radius: 25px;
+            font-size: 1.1rem;
+            cursor: pointer;
+            width: 100%;
+            margin: 20px 0;
+            transition: transform 0.2s ease;
+            display: none;
+        }
+        
+        .analyze-btn:hover {
+            transform: translateY(-2px);
+        }
+        
+        .analyze-btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            transform: none;
+        }
+        
+        .results {
+            margin-top: 30px;
+            display: none;
+        }
+        
+        .result-card {
+            background: #f8f9fa;
+            border-radius: 10px;
+            padding: 20px;
+            margin: 15px 0;
+            border-left: 5px solid #4facfe;
+        }
+        
+        .result-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin: 10px 0;
+            padding: 10px;
+            background: white;
+            border-radius: 8px;
+        }
+        
+        .status-badge {
+            padding: 5px 15px;
+            border-radius: 20px;
+            font-weight: bold;
+            text-transform: uppercase;
+            font-size: 0.9rem;
+        }
+        
+        .status-good {
+            background: #d4edda;
+            color: #155724;
+        }
+        
+        .status-bad {
+            background: #f8d7da;
+            color: #721c24;
+        }
+        
+        .loading {
+            text-align: center;
+            padding: 20px;
+            display: none;
+        }
+        
+        .spinner {
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #4facfe;
+            border-radius: 50%;
+            width: 50px;
+            height: 50px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 20px;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        
+        .error-message {
+            background: #f8d7da;
+            color: #721c24;
+            padding: 15px;
+            border-radius: 8px;
+            margin: 20px 0;
+            display: none;
+        }
+        
+        .api-status {
+            margin-bottom: 30px;
+        }
+        
+        .status-indicator {
+            display: inline-block;
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            margin-right: 8px;
+        }
+        
+        .status-online {
+            background: #28a745;
+        }
+        
+        .status-offline {
+            background: #dc3545;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🚗 Car Condition Analyzer</h1>
+            <p>Анализ состояния автомобилей с использованием ИИ</p>
+        </div>
+        
+        <div class="main-content">
+            <div class="api-status">
+                <h3>
+                    <span id="statusIndicator" class="status-indicator"></span>
+                    <span id="statusText">Проверка соединения...</span>
+                </h3>
+            </div>
+            
+            <div class="upload-section" id="uploadSection">
+                <h3>📁 Загрузите изображение автомобиля</h3>
+                <p>Поддерживаемые форматы: JPEG, PNG (максимум 10MB)</p>
+                <br>
+                <input type="file" id="fileInput" accept="image/*">
+                <button class="upload-btn" onclick="document.getElementById('fileInput').click()">
+                    Выбрать файл
+                </button>
+            </div>
+            
+            <div class="file-info" id="fileInfo">
+                <h4>Выбранный файл:</h4>
+                <p id="fileName"></p>
+                <p id="fileSize"></p>
+            </div>
+            
+            <button class="analyze-btn" id="analyzeBtn" onclick="analyzeImage()">
+                🔍 Анализировать состояние автомобиля
+            </button>
+            
+            <div class="loading" id="loading">
+                <div class="spinner"></div>
+                <p>Анализируем изображение...</p>
+            </div>
+            
+            <div class="error-message" id="errorMessage"></div>
+            
+            <div class="results" id="results">
+                <h3>📊 Результаты анализа</h3>
+                
+                <div class="result-card">
+                    <h4>Основные показатели</h4>
+                    <div class="result-item">
+                        <span>Повреждения (битый):</span>
+                        <span class="status-badge" id="damagedStatus">-</span>
+                    </div>
+                    <div class="result-item">
+                        <span>Загрязнения:</span>
+                        <span class="status-badge" id="dirtyStatus">-</span>
+                    </div>
+                    <div class="result-item">
+                        <span>Царапины:</span>
+                        <span class="status-badge" id="scratchStatus">-</span>
+                    </div>
+                </div>
+                
+                <div class="result-card" id="detailedResults" style="display: none;">
+                    <h4>Подробная информация</h4>
+                    <div id="detailedContent"></div>
+                </div>
+                
+                <div class="result-card">
+                    <h4>Общее состояние</h4>
+                    <p id="overallCondition">-</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE_URL = 'http://localhost:8001';
+        let selectedFile = null;
+
+        // Проверка состояния API при загрузке страницы
+        async function checkAPIStatus() {
+            try {
+                const response = await fetch(`${API_BASE_URL}/health`);
+                if (response.ok) {
+                    document.getElementById('statusIndicator').className = 'status-indicator status-online';
+                    document.getElementById('statusText').textContent = 'API доступен';
+                    return true;
+                } else {
+                    throw new Error('API недоступен');
+                }
+            } catch (error) {
+                document.getElementById('statusIndicator').className = 'status-indicator status-offline';
+                document.getElementById('statusText').textContent = 'API недоступен (убедитесь, что сервер запущен на порту 8001)';
+                return false;
+            }
+        }
+
+        // Обработка выбора файла
+        document.getElementById('fileInput').addEventListener('change', function(e) {
+            const file = e.target.files[0];
+            if (file) {
+                selectedFile = file;
+                
+                // Показываем информацию о файле
+                document.getElementById('fileName').textContent = file.name;
+                document.getElementById('fileSize').textContent = `Размер: ${(file.size / 1024 / 1024).toFixed(2)} MB`;
+                document.getElementById('fileInfo').style.display = 'block';
+                document.getElementById('analyzeBtn').style.display = 'block';
+                
+                // Скрываем предыдущие результаты
+                document.getElementById('results').style.display = 'none';
+                document.getElementById('errorMessage').style.display = 'none';
+            }
+        });
+
+        // Drag & Drop функциональность
+        const uploadSection = document.getElementById('uploadSection');
+        
+        uploadSection.addEventListener('dragover', function(e) {
+            e.preventDefault();
+            uploadSection.classList.add('dragover');
+        });
+        
+        uploadSection.addEventListener('dragleave', function(e) {
+            e.preventDefault();
+            uploadSection.classList.remove('dragover');
+        });
+        
+        uploadSection.addEventListener('drop', function(e) {
+            e.preventDefault();
+            uploadSection.classList.remove('dragover');
+            
+            const files = e.dataTransfer.files;
+            if (files.length > 0) {
+                const file = files[0];
+                if (file.type.startsWith('image/')) {
+                    document.getElementById('fileInput').files = files;
+                    document.getElementById('fileInput').dispatchEvent(new Event('change'));
+                }
+            }
+        });
+
+        // Анализ изображения
+        async function analyzeImage() {
+            if (!selectedFile) {
+                showError('Пожалуйста, выберите изображение');
+                return;
+            }
+
+            // Показываем индикатор загрузки
+            document.getElementById('loading').style.display = 'block';
+            document.getElementById('analyzeBtn').disabled = true;
+            document.getElementById('errorMessage').style.display = 'none';
+            document.getElementById('results').style.display = 'none';
+
+            try {
+                const formData = new FormData();
+                formData.append('file', selectedFile);
+
+                const response = await fetch(`${API_BASE_URL}/analyze-detailed`, {
+                    method: 'POST',
+                    body: formData
+                });
+
+                if (response.ok) {
+                    const data = await response.json();
+                    displayResults(data);
+                } else {
+                    const errorData = await response.json();
+                    throw new Error(errorData.detail || 'Ошибка анализа');
+                }
+            } catch (error) {
+                showError(`Ошибка анализа: ${error.message}`);
+            } finally {
+                document.getElementById('loading').style.display = 'none';
+                document.getElementById('analyzeBtn').disabled = false;
+            }
+        }
+
+        // Отображение результатов
+        function displayResults(data) {
+            // Основные показатели
+            updateStatusBadge('damagedStatus', data['битый'], 'битый', 'не битый');
+            updateStatusBadge('dirtyStatus', data['грязный'], 'грязный', 'чистый');
+            updateStatusBadge('scratchStatus', data['царапины'], 'есть царапины', 'нет царапин');
+
+            // Общее состояние
+            document.getElementById('overallCondition').textContent = 
+                data.overall_condition || 'Не определено';
+
+            // Подробная информация
+            if (data.detailed_analysis) {
+                displayDetailedAnalysis(data.detailed_analysis);
+            }
+
+            document.getElementById('results').style.display = 'block';
+        }
+
+        function updateStatusBadge(elementId, value, badText, goodText) {
+            const element = document.getElementById(elementId);
+            element.textContent = value ? badText : goodText;
+            element.className = `status-badge ${value ? 'status-bad' : 'status-good'}`;
+        }
+
+        function displayDetailedAnalysis(analysis) {
+            const detailedContent = document.getElementById('detailedContent');
+            detailedContent.innerHTML = '';
+
+            for (const [category, info] of Object.entries(analysis)) {
+                const categoryDiv = document.createElement('div');
+                categoryDiv.className = 'result-item';
+                categoryDiv.innerHTML = `
+                    <div>
+                        <strong>${category === 'damage' ? 'Повреждения' : 
+                                   category === 'dirt' ? 'Загрязнения' : 'Царапины'}:</strong><br>
+                        <small>Уверенность: ${(info.confidence * 100).toFixed(1)}%</small>
+                    </div>
+                    <span class="status-badge ${info.status.includes('не') || info.status.includes('нет') ? 'status-good' : 'status-bad'}">
+                        ${info.status}
+                    </span>
+                `;
+                detailedContent.appendChild(categoryDiv);
+            }
+
+            document.getElementById('detailedResults').style.display = 'block';
+        }
+
+        function showError(message) {
+            document.getElementById('errorMessage').textContent = message;
+            document.getElementById('errorMessage').style.display = 'block';
+        }
+
+        // Инициализация при загрузке страницы
+        window.addEventListener('load', checkAPIStatus);
+    </script>
+</body>
+</html>
