@@ -16,3 +16,4 @@ venv/
 *.so
 *.dylib
 *.pt
+.DS_Store
