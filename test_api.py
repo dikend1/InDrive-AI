@@ -12,13 +12,13 @@ import os
 from pathlib import Path
 
 # Базовый URL API
-API_BASE_URL = "http://localhost:8001"
+BASE_URL = "http://localhost:8001"
 
 def test_health_check():
     """Проверка состояния API"""
     print("🏥 Проверка состояния API...")
     try:
-        response = requests.get(f"{API_BASE_URL}/health")
+        response = requests.get(f"{BASE_URL}/health")
         if response.status_code == 200:
             data = response.json()
             print("✅ API работает корректно")
@@ -36,9 +36,14 @@ def test_health_check():
         print(f"❌ Ошибка: {e}")
         return False
 
-def test_analyze_image(image_path):
-    """Анализ изображения автомобиля"""
-    print(f"\n🚗 Анализ изображения: {image_path}")
+def test_basic_analysis(image_path):
+    """
+    Базовый анализ изображения - демонстрирует независимый анализ трех аспектов:
+    - Повреждения (битый/не битый)
+    - Загрязнения (грязный/чистый)  
+    - Царапины (есть/нет царапин)
+    """
+    print(f"\n� Базовый анализ: {image_path}")
     
     if not os.path.exists(image_path):
         print(f"❌ Файл не найден: {image_path}")
@@ -47,25 +52,93 @@ def test_analyze_image(image_path):
     try:
         with open(image_path, 'rb') as f:
             files = {'file': f}
-            response = requests.post(f"{API_BASE_URL}/analyze", files=files)
+            response = requests.post(f"{BASE_URL}/analyze", files=files)
         
         if response.status_code == 200:
             data = response.json()
+            print("✅ Анализ выполнен!")
             
-            print("✅ Анализ выполнен успешно!")
-            print(f"   Битый: {data['битый']} ({'Да' if data['битый'] else 'Нет'})")
-            print(f"   Грязный: {data['грязный']} ({'Да' if data['грязный'] else 'Нет'})")
-            print(f"   Царапины: {data['царапины']} ({'Да' if data['царапины'] else 'Нет'})")
+            # Основные результаты (независимые аспекты)
+            damage_status = "БИТЫЙ" if data['битый'] else "НЕ БИТЫЙ"
+            dirt_status = "ГРЯЗНЫЙ" if data['грязный'] else "ЧИСТЫЙ"
+            scratch_status = "ЕСТЬ ЦАРАПИНЫ" if data['царапины'] else "НЕТ ЦАРАПИН"
             
-            if 'car_detected' in data:
-                print(f"   Автомобиль обнаружен: {'✅' if data['car_detected'] else '❌'}")
+            print(f"   📊 РЕЗУЛЬТАТЫ АНАЛИЗА:")
+            print(f"     🔧 Повреждения: {damage_status} ({data['битый']})")
+            print(f"     🧽 Загрязнения: {dirt_status} ({data['грязный']})")
+            print(f"     🪃 Царапины: {scratch_status} ({data['царапины']})")
             
-            if 'overall_condition' in data:
-                print(f"   Общее состояние: {data['overall_condition']}")
+            if 'detailed_analysis' in data:
+                details = data['detailed_analysis']
+                print(f"   📈 Уверенность модели:")
+                print(f"     • Повреждения: {details['damage']['confidence']:.1%}")
+                print(f"     • Загрязнения: {details['dirt']['confidence']:.1%}")
+                print(f"     • Царапины: {details['scratch']['confidence']:.1%}")
             
+            print(f"   🏆 Общее состояние: {data.get('overall_condition', 'не определено')}")
             return data
         else:
             print(f"❌ Ошибка анализа: {response.status_code}")
+            print(f"   Ответ: {response.text}")
+            return None
+            
+    except Exception as e:
+        print(f"❌ Ошибка: {e}")
+        return None
+
+def test_analyze_by_parts(image_path):
+    """
+    Анализ изображения по частям - демонстрирует как каждая часть автомобиля 
+    анализируется независимо по трем критериям (повреждения, загрязнения, царапины)
+    """
+    print(f"\n🧩 Анализ по частям: {image_path}")
+    
+    if not os.path.exists(image_path):
+        print(f"❌ Файл не найден: {image_path}")
+        return None
+    
+    try:
+        with open(image_path, 'rb') as f:
+            files = {'file': f}
+            response = requests.post(f"{BASE_URL}/analyze-by-parts", files=files)
+        
+        if response.status_code == 200:
+            data = response.json()
+            print("✅ Анализ по частям выполнен!")
+            
+            image_type = data.get('image_type', 'unknown')
+            image_type_text = "Салон" if image_type == 'interior' else "Экстерьер" if image_type == 'exterior' else "Неизвестно"
+            print(f"   Тип изображения: {image_type_text}")
+            
+            # Анализ по частям
+            if 'parts_analysis' in data:
+                print("\n   📋 Результаты по частям:")
+                
+                part_names = {
+                    'dashboard': 'Панель приборов',
+                    'seats': 'Сиденья', 
+                    'floor': 'Пол салона',
+                    'upper': 'Верхняя часть (крыша, капот)',
+                    'middle': 'Средняя часть (двери, кузов)',
+                    'lower': 'Нижняя часть (бампер, пороги)'
+                }
+                
+                for part_key, analysis in data['parts_analysis'].items():
+                    part_name = part_names.get(part_key, part_key)
+                    print(f"     🔹 {part_name}:")
+                    print(f"       Повреждения: {'❌ Есть' if analysis['damaged'] else '✅ Нет'}")
+                    print(f"       Загрязнения: {'❌ Есть' if analysis['dirty'] else '✅ Нет'}")
+                    print(f"       Царапины: {'❌ Есть' if analysis['scratched'] else '✅ Нет'}")
+                    
+                    conf = analysis.get('confidence_scores', {})
+                    print(f"       Уверенность: {conf.get('damage', 0)*100:.1f}% / {conf.get('dirt', 0)*100:.1f}% / {conf.get('scratch', 0)*100:.1f}%")
+            
+            if 'overall_condition' in data:
+                print(f"\n   🎯 Общее состояние: {data['overall_condition']}")
+            
+            return data
+        else:
+            print(f"❌ Ошибка анализа по частям: {response.status_code}")
             print(f"   Ответ: {response.text}")
             return None
             
@@ -84,7 +157,7 @@ def test_detailed_analyze(image_path):
     try:
         with open(image_path, 'rb') as f:
             files = {'file': f}
-            response = requests.post(f"{API_BASE_URL}/analyze-detailed", files=files)
+            response = requests.post(f"{BASE_URL}/analyze-detailed", files=files)
         
         if response.status_code == 200:
             data = response.json()
@@ -140,7 +213,7 @@ def test_models_status():
     """Проверка статуса загруженных моделей"""
     print("\n🧠 Статус моделей машинного обучения:")
     try:
-        response = requests.get(f"{API_BASE_URL}/models/status")
+        response = requests.get(f"{BASE_URL}/models/status")
         if response.status_code == 200:
             data = response.json()
             
@@ -182,19 +255,22 @@ def main():
     
     # 4. Анализ изображений
     for i, image_path in enumerate(test_images[:2], 1):  # Анализируем первые 2 изображения
-        print(f"\n{'='*20} Тест {i} {'='*20}")
+        print(f"\n{'='*30} Тест {i} {'='*30}")
         
-        # Обычный анализ
-        result = test_analyze_image(image_path)
+        # Базовый анализ
+        basic_result = test_basic_analysis(image_path)
         
-        # Подробный анализ
-        if result and result.get('car_detected', False):
+        # Анализ по частям
+        parts_result = test_analyze_by_parts(image_path)
+        
+        # Подробный анализ (если есть результат)
+        if basic_result:
             test_detailed_analyze(image_path)
     
     print(f"\n{'='*60}")
     print("✅ Тестирование завершено!")
-    print(f"🌐 Документация API: {API_BASE_URL}/docs")
-    print(f"🏠 Главная страница: {API_BASE_URL}/")
+    print(f"🌐 Документация API: {BASE_URL}/docs")
+    print(f"🏠 Главная страница: {BASE_URL}/")
 
 if __name__ == "__main__":
     main()

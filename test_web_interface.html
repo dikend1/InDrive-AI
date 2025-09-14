@@ -236,9 +236,14 @@
                 <p id="fileSize"></p>
             </div>
             
-            <button class="analyze-btn" id="analyzeBtn" onclick="analyzeImage()">
-                🔍 Анализировать состояние автомобиля
-            </button>
+            <div style="display: flex; gap: 10px; margin: 20px 0;">
+                <button class="analyze-btn" id="analyzeBtn" onclick="analyzeImage()" style="flex: 1; display: none;">
+                    🔍 Базовый анализ
+                </button>
+                <button class="analyze-btn" id="analyzePartsBtn" onclick="analyzeByParts()" style="flex: 1; display: none; background: linear-gradient(135deg, #fa709a 0%, #fee140 100%);">
+                    🧩 Анализ по частям
+                </button>
+            </div>
             
             <div class="loading" id="loading">
                 <div class="spinner"></div>
@@ -271,9 +276,15 @@
                     <div id="detailedContent"></div>
                 </div>
                 
+                <div class="result-card" id="partsResults" style="display: none;">
+                    <h4>Анализ по частям</h4>
+                    <div id="partsContent"></div>
+                </div>
+                
                 <div class="result-card">
                     <h4>Общее состояние</h4>
                     <p id="overallCondition">-</p>
+                    <p id="imageType" style="font-size: 0.9rem; color: #666; margin-top: 10px;">-</p>
                 </div>
             </div>
         </div>
@@ -312,6 +323,7 @@
                 document.getElementById('fileSize').textContent = `Размер: ${(file.size / 1024 / 1024).toFixed(2)} MB`;
                 document.getElementById('fileInfo').style.display = 'block';
                 document.getElementById('analyzeBtn').style.display = 'block';
+                document.getElementById('analyzePartsBtn').style.display = 'block';
                 
                 // Скрываем предыдущие результаты
                 document.getElementById('results').style.display = 'none';
@@ -356,6 +368,7 @@
             // Показываем индикатор загрузки
             document.getElementById('loading').style.display = 'block';
             document.getElementById('analyzeBtn').disabled = true;
+            document.getElementById('analyzePartsBtn').disabled = true;
             document.getElementById('errorMessage').style.display = 'none';
             document.getElementById('results').style.display = 'none';
 
@@ -380,6 +393,46 @@
             } finally {
                 document.getElementById('loading').style.display = 'none';
                 document.getElementById('analyzeBtn').disabled = false;
+                document.getElementById('analyzePartsBtn').disabled = false;
+            }
+        }
+
+        // Анализ по частям
+        async function analyzeByParts() {
+            if (!selectedFile) {
+                showError('Пожалуйста, выберите изображение');
+                return;
+            }
+
+            // Показываем индикатор загрузки
+            document.getElementById('loading').style.display = 'block';
+            document.getElementById('analyzeBtn').disabled = true;
+            document.getElementById('analyzePartsBtn').disabled = true;
+            document.getElementById('errorMessage').style.display = 'none';
+            document.getElementById('results').style.display = 'none';
+
+            try {
+                const formData = new FormData();
+                formData.append('file', selectedFile);
+
+                const response = await fetch(`${API_BASE_URL}/analyze-by-parts`, {
+                    method: 'POST',
+                    body: formData
+                });
+
+                if (response.ok) {
+                    const data = await response.json();
+                    displayPartsResults(data);
+                } else {
+                    const errorData = await response.json();
+                    throw new Error(errorData.detail || 'Ошибка анализа по частям');
+                }
+            } catch (error) {
+                showError(`Ошибка анализа по частям: ${error.message}`);
+            } finally {
+                document.getElementById('loading').style.display = 'none';
+                document.getElementById('analyzeBtn').disabled = false;
+                document.getElementById('analyzePartsBtn').disabled = false;
             }
         }
 
@@ -393,6 +446,11 @@
             // Общее состояние
             document.getElementById('overallCondition').textContent = 
                 data.overall_condition || 'Не определено';
+            
+            // Тип изображения
+            document.getElementById('imageType').textContent = 
+                `Тип: ${data.image_type === 'interior' ? 'Салон автомобиля' : 
+                        data.image_type === 'exterior' ? 'Экстерьер автомобиля' : 'Не определен'}`;
 
             // Подробная информация
             if (data.detailed_analysis) {
@@ -400,6 +458,87 @@
             }
 
             document.getElementById('results').style.display = 'block';
+        }
+
+        // Отображение результатов анализа по частям
+        function displayPartsResults(data) {
+            // Основные показатели
+            updateStatusBadge('damagedStatus', data['битый'], 'битый', 'не битый');
+            updateStatusBadge('dirtyStatus', data['грязный'], 'грязный', 'чистый');
+            updateStatusBadge('scratchStatus', data['царапины'], 'есть царапины', 'нет царапин');
+
+            // Общее состояние
+            document.getElementById('overallCondition').textContent = 
+                data.overall_condition || 'Не определено';
+                
+            // Тип изображения
+            document.getElementById('imageType').textContent = 
+                `Тип: ${data.image_type === 'interior' ? 'Салон автомобиля' : 
+                        data.image_type === 'exterior' ? 'Экстерьер автомобиля' : 'Не определен'}`;
+
+            // Анализ по частям
+            if (data.parts_analysis) {
+                displayPartsAnalysis(data.parts_analysis, data.image_type);
+            }
+
+            document.getElementById('results').style.display = 'block';
+        }
+
+        function displayPartsAnalysis(partsAnalysis, imageType) {
+            const partsContent = document.getElementById('partsContent');
+            partsContent.innerHTML = '';
+
+            const partNames = {
+                'dashboard': 'Панель приборов',
+                'seats': 'Сиденья',
+                'floor': 'Пол салона',
+                'upper': 'Верхняя часть (крыша, капот)',
+                'middle': 'Средняя часть (двери, кузов)',
+                'lower': 'Нижняя часть (бампер, пороги)'
+            };
+
+            for (const [partKey, analysis] of Object.entries(partsAnalysis)) {
+                const partDiv = document.createElement('div');
+                partDiv.style.marginBottom = '15px';
+                partDiv.style.padding = '15px';
+                partDiv.style.backgroundColor = '#f8f9fa';
+                partDiv.style.borderRadius = '8px';
+                partDiv.style.border = '1px solid #dee2e6';
+
+                const partName = partNames[partKey] || partKey;
+                
+                partDiv.innerHTML = `
+                    <h5 style="margin-bottom: 10px; color: #495057;">${partName}</h5>
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin: 5px 0;">
+                        <span>Повреждения:</span>
+                        <span class="status-badge ${analysis.damaged ? 'status-bad' : 'status-good'}">
+                            ${analysis.damaged ? 'Есть' : 'Нет'}
+                        </span>
+                    </div>
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin: 5px 0;">
+                        <span>Загрязнения:</span>
+                        <span class="status-badge ${analysis.dirty ? 'status-bad' : 'status-good'}">
+                            ${analysis.dirty ? 'Есть' : 'Нет'}
+                        </span>
+                    </div>
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin: 5px 0;">
+                        <span>Царапины:</span>
+                        <span class="status-badge ${analysis.scratched ? 'status-bad' : 'status-good'}">
+                            ${analysis.scratched ? 'Есть' : 'Нет'}
+                        </span>
+                    </div>
+                    <div style="margin-top: 10px; font-size: 0.9rem; color: #6c757d;">
+                        Уверенность: 
+                        повреждения ${(analysis.confidence_scores.damage * 100).toFixed(1)}%, 
+                        загрязнения ${(analysis.confidence_scores.dirt * 100).toFixed(1)}%, 
+                        царапины ${(analysis.confidence_scores.scratch * 100).toFixed(1)}%
+                    </div>
+                `;
+                
+                partsContent.appendChild(partDiv);
+            }
+
+            document.getElementById('partsResults').style.display = 'block';
         }
 
         function updateStatusBadge(elementId, value, badText, goodText) {

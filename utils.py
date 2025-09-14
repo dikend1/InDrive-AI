@@ -27,6 +27,14 @@ class ImageProcessor:
         except Exception as e:
             logger.error(f"Ошибка загрузки модели детекции: {e}")
             self.car_detector = None
+        
+        # Определяем типы областей автомобиля для анализа
+        self.car_parts_mapping = {
+            'exterior': ['кузов', 'бампер', 'крыло', 'дверь', 'капот', 'багажник'],
+            'interior': ['салон', 'сиденье', 'панель', 'руль', 'приборы'],
+            'wheels': ['колесо', 'диск', 'шина'],
+            'lights': ['фара', 'фонарь', 'поворотник']
+        }
     
     def preprocess_image(self, image: Image.Image, target_size: Tuple[int, int] = (224, 224)) -> torch.Tensor:
         """
@@ -100,6 +108,129 @@ class ImageProcessor:
         except Exception as e:
             logger.error(f"Ошибка детекции автомобиля: {e}")
             return {"has_car": False, "message": f"Ошибка детекции: {str(e)}"}
+    
+    def analyze_image_content(self, image: Image.Image) -> Dict:
+        """
+        Анализ содержимого изображения для определения видимых частей автомобиля
+        
+        Args:
+            image: PIL изображение
+            
+        Returns:
+            Словарь с информацией о видимых частях
+        """
+        image_np = np.array(image)
+        height, width = image_np.shape[:2]
+        
+        # Анализируем позицию и содержимое изображения
+        analysis = {
+            'image_type': 'unknown',
+            'visible_parts': [],
+            'analysis_regions': {},
+            'recommended_models': []
+        }
+        
+        # Простые эвристики для определения типа изображения
+        # В реальной системе здесь был бы более сложный анализ
+        
+        # Проверяем соотношение сторон
+        aspect_ratio = width / height
+        
+        # Анализ цветовых особенностей для определения салона vs экстерьера
+        hsv = cv2.cvtColor(image_np, cv2.COLOR_RGB2HSV)
+        
+        # Анализ текстур и паттернов
+        gray = cv2.cvtColor(image_np, cv2.COLOR_RGB2GRAY)
+        edges = cv2.Canny(gray, 50, 150)
+        edge_density = np.sum(edges > 0) / (width * height)
+        
+        # Определяем тип изображения по признакам
+        if self._is_interior_image(image_np, hsv, edge_density):
+            analysis['image_type'] = 'interior'
+            analysis['visible_parts'] = ['салон', 'сиденья', 'панель_приборов']
+            analysis['recommended_models'] = ['interior_dirt', 'interior_damage', 'interior_scratch']
+            analysis['analysis_regions'] = self._get_interior_regions(width, height)
+        else:
+            analysis['image_type'] = 'exterior'
+            analysis['visible_parts'] = ['кузов', 'бампер', 'капот']
+            analysis['recommended_models'] = ['exterior_dirt', 'exterior_damage', 'exterior_scratch']
+            analysis['analysis_regions'] = self._get_exterior_regions(width, height)
+        
+        return analysis
+    
+    def _is_interior_image(self, image_np: np.ndarray, hsv: np.ndarray, edge_density: float) -> bool:
+        """Определяет, является ли изображение салоном автомобиля"""
+        # Анализ цветовых характеристик
+        # Салон обычно имеет более темные тона и меньше ярких цветов
+        v_channel = hsv[:, :, 2]
+        brightness = np.mean(v_channel)
+        
+        # Салон обычно имеет больше прямых линий и геометрических форм
+        lines = cv2.HoughLinesP(cv2.Canny(cv2.cvtColor(image_np, cv2.COLOR_RGB2GRAY), 50, 150),
+                               1, np.pi/180, threshold=100, minLineLength=50, maxLineGap=10)
+        
+        line_count = len(lines) if lines is not None else 0
+        
+        # Простая эвристика: салон = низкая яркость + много линий + высокая плотность краев
+        return brightness < 120 and line_count > 10 and edge_density > 0.1
+    
+    def _get_interior_regions(self, width: int, height: int) -> Dict:
+        """Определяет регионы для анализа салона"""
+        return {
+            'dashboard': {'x1': 0, 'y1': 0, 'x2': width, 'y2': height//3},
+            'seats': {'x1': 0, 'y1': height//3, 'x2': width, 'y2': 2*height//3},
+            'floor': {'x1': 0, 'y1': 2*height//3, 'x2': width, 'y2': height}
+        }
+    
+    def _get_exterior_regions(self, width: int, height: int) -> Dict:
+        """Определяет регионы для анализа экстерьера"""
+        return {
+            'upper': {'x1': 0, 'y1': 0, 'x2': width, 'y2': height//3},      # крыша, капот
+            'middle': {'x1': 0, 'y1': height//3, 'x2': width, 'y2': 2*height//3},  # двери, кузов
+            'lower': {'x1': 0, 'y1': 2*height//3, 'x2': width, 'y2': height}       # бампер, пороги
+        }
+    
+    def segment_car_parts(self, image: Image.Image, car_bbox: List[float] = None) -> Dict:
+        """
+        Сегментация изображения автомобиля на отдельные части для целевого анализа
+        
+        Args:
+            image: PIL изображение
+            car_bbox: bounding box автомобиля (опционально)
+            
+        Returns:
+            Словарь с сегментированными областями
+        """
+        image_np = np.array(image)
+        height, width = image_np.shape[:2]
+        
+        # Анализируем содержимое изображения
+        content_analysis = self.analyze_image_content(image)
+        
+        segments = {
+            'image_type': content_analysis['image_type'],
+            'regions': {},
+            'cropped_regions': {}
+        }
+        
+        # Получаем регионы в зависимости от типа изображения
+        regions = content_analysis['analysis_regions']
+        
+        for region_name, coords in regions.items():
+            x1, y1, x2, y2 = coords['x1'], coords['y1'], coords['x2'], coords['y2']
+            
+            # Обрезаем регион
+            cropped_region = image.crop((x1, y1, x2, y2))
+            
+            segments['regions'][region_name] = {
+                'bbox': [x1, y1, x2, y2],
+                'size': (x2-x1, y2-y1),
+                'area_percentage': ((x2-x1) * (y2-y1)) / (width * height) * 100
+            }
+            
+            segments['cropped_regions'][region_name] = cropped_region
+        
+        return segments
     
     def crop_car_region(self, image: Image.Image, bbox: List[float], padding: float = 0.1) -> Image.Image:
         """

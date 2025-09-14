@@ -58,44 +58,30 @@ async def startup_event():
 
 @app.get("/")
 async def root():
-    """Корневой эндпоинт"""
+    """Анализ состояния автомобилей"""
     return {
         "message": "Car Condition Analyzer API",
-        "version": "1.0.0",
-        "description": "API для анализа состояния автомобилей",
         "endpoints": {
-            "analyze": "/analyze - анализ изображения автомобиля",
-            "health": "/health - проверка состояния API",
-            "docs": "/docs - документация API"
+            "analyze": "/analyze - анализ состояния автомобиля",
+            "analyze_by_parts": "/analyze-by-parts - анализ по частям", 
+            "health": "/health - состояние системы"
+        },
+        "result_format": {
+            "битый": "1 (есть повреждения) или 0 (нет повреждений)",
+            "грязный": "1 (загрязненный) или 0 (чистый)",
+            "царапины": "1 (есть царапины) или 0 (нет царапин)"
         }
     }
 
-@app.get("/health")
-async def health_check():
-    """Проверка состояния API"""
-    try:
-        status = {
-            "status": "healthy",
-            "image_processor": image_processor is not None,
-            "condition_analyzer": condition_analyzer is not None,
-            "models_loaded": {
-                "damage_classifier": condition_analyzer.damage_classifier.model is not None if condition_analyzer else False,
-                "dirt_classifier": condition_analyzer.dirt_classifier.model is not None if condition_analyzer else False,
-                "scratch_classifier": condition_analyzer.scratch_classifier.model is not None if condition_analyzer else False
-            }
-        }
-        return status
-    except Exception as e:
-        return {"status": "error", "message": str(e)}
 
 @app.post("/analyze")
 async def analyze_car_condition(file: UploadFile = File(...)):
     """
-    Анализ состояния автомобиля по изображению
+    Анализ состояния автомобиля
     
-    Возвращает JSON с результатами анализа:
-    - битый: 1 (битый) или 0 (не битый)
-    - грязный: 1 (грязный) или 0 (чистый)
+    Возвращает:
+    - битый: 1 (есть повреждения) или 0 (нет повреждений)
+    - грязный: 1 (загрязненный) или 0 (чистый) 
     - царапины: 1 (есть царапины) или 0 (нет царапин)
     """
     if not image_processor or not condition_analyzer:
@@ -110,42 +96,20 @@ async def analyze_car_condition(file: UploadFile = File(...)):
         if not is_valid:
             raise HTTPException(status_code=400, detail=message)
         
-        # Детекция автомобиля на изображении
-        car_detection = image_processor.detect_car_in_image(image)
-        
-        if not car_detection["has_car"]:
-            return JSONResponse(
-                status_code=200,
-                content={
-                    "битый": 0,
-                    "грязный": 0,
-                    "царапины": 0,
-                    "message": "На изображении не обнаружен автомобиль",
-                    "car_detected": False,
-                    "analysis_performed": False
-                }
-            )
-        
-        # Если найден автомобиль, обрезаем изображение по области автомобиля
-        if car_detection["detections"]:
-            # Используем первое обнаружение с наибольшей уверенностью
-            best_detection = max(car_detection["detections"], key=lambda x: x["confidence"])
-            cropped_image = image_processor.crop_car_region(image, best_detection["bbox"])
-        else:
-            cropped_image = image
-        
         # Предобработка изображения для классификации
-        image_tensor = image_processor.preprocess_image(cropped_image)
+        image_tensor = image_processor.preprocess_image(image)
         
         # Анализ состояния автомобиля
         analysis_result = condition_analyzer.analyze_car_condition(image_tensor)
         
-        # Добавляем информацию о детекции автомобиля
-        analysis_result["car_detected"] = True
-        analysis_result["car_detection_confidence"] = best_detection["confidence"] if car_detection["detections"] else 1.0
-        analysis_result["analysis_performed"] = True
+        # Возвращаем только основную информацию
+        simple_result = {
+            "битый": analysis_result["битый"],
+            "грязный": analysis_result["грязный"],
+            "царапины": analysis_result["царапины"]
+        }
         
-        return JSONResponse(status_code=200, content=analysis_result)
+        return JSONResponse(status_code=200, content=simple_result)
         
     except HTTPException:
         raise
@@ -153,12 +117,14 @@ async def analyze_car_condition(file: UploadFile = File(...)):
         logger.error(f"Ошибка анализа изображения: {e}")
         raise HTTPException(status_code=500, detail=f"Внутренняя ошибка сервера: {str(e)}")
 
-@app.post("/analyze-detailed")
-async def analyze_car_condition_detailed(file: UploadFile = File(...)):
+@app.post("/analyze-by-parts")
+async def analyze_car_parts(file: UploadFile = File(...)):
     """
-    Подробный анализ состояния автомобиля по изображению
+    Анализ по частям автомобиля
     
-    Возвращает расширенную информацию включая уверенность модели и вероятности
+    Возвращает результаты для каждой части отдельно:
+    - Общий результат (битый: 0/1, грязный: 0/1, царапины: 0/1)
+    - Детализация по частям с указанием конкретных мест
     """
     if not image_processor or not condition_analyzer:
         raise HTTPException(status_code=503, detail="Система анализа не инициализирована")
@@ -172,52 +138,38 @@ async def analyze_car_condition_detailed(file: UploadFile = File(...)):
         if not is_valid:
             raise HTTPException(status_code=400, detail=message)
         
-        # Детекция автомобиля на изображении
-        car_detection = image_processor.detect_car_in_image(image)
+        # Сегментация изображения на части
+        segments = image_processor.segment_car_parts(image)
         
-        if not car_detection["has_car"]:
-            return JSONResponse(
-                status_code=200,
-                content={
-                    "битый": 0,
-                    "грязный": 0,
-                    "царапины": 0,
-                    "message": "На изображении не обнаружен автомобиль",
-                    "car_detection": car_detection,
-                    "detailed_analysis": None,
-                    "analysis_performed": False
+        # Анализ по частям
+        analysis_result = condition_analyzer.analyze_by_parts(segments)
+        
+        # Упрощенный результат
+        parts_details = {}
+        if "parts_analysis" in analysis_result:
+            for part_name, part_data in analysis_result["parts_analysis"].items():
+                parts_details[part_name] = {
+                    "битый": part_data.get("damaged", 0),
+                    "грязный": part_data.get("dirty", 0),
+                    "царапины": part_data.get("scratched", 0)
                 }
-            )
         
-        # Обработка изображения для анализа
-        if car_detection["detections"]:
-            best_detection = max(car_detection["detections"], key=lambda x: x["confidence"])
-            cropped_image = image_processor.crop_car_region(image, best_detection["bbox"])
-        else:
-            cropped_image = image
-        
-        # Предобработка изображения
-        image_tensor = image_processor.preprocess_image(cropped_image)
-        
-        # Полный анализ состояния
-        analysis_result = condition_analyzer.analyze_car_condition(image_tensor)
-        
-        # Добавляем подробную информацию о детекции
-        analysis_result["car_detection"] = car_detection
-        analysis_result["image_info"] = {
-            "original_size": image.size,
-            "processed_size": cropped_image.size if car_detection["detections"] else image.size,
-            "filename": file.filename,
-            "content_type": file.content_type
+        simple_result = {
+            "битый": analysis_result["битый"],
+            "грязный": analysis_result["грязный"], 
+            "царапины": analysis_result["царапины"],
+            "части": parts_details
         }
         
-        return JSONResponse(status_code=200, content=analysis_result)
+        return JSONResponse(status_code=200, content=simple_result)
         
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Ошибка подробного анализа: {e}")
+        logger.error(f"Ошибка анализа по частям: {e}")
         raise HTTPException(status_code=500, detail=f"Внутренняя ошибка сервера: {str(e)}")
+
+# Удален детальный endpoint - оставляем только основную функциональность
 
 @app.get("/models/status")
 async def get_models_status():
@@ -248,7 +200,7 @@ if __name__ == "__main__":
     uvicorn.run(
         "main:app",
         host="0.0.0.0",
-        port=8000,
-        reload=True,
+        port=8004,
+        reload=False,
         log_level="info"
     )
