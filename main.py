@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 
 # Создание FastAPI приложения
 app = FastAPI(
-    title="Car Condition Analyzer API",
+    title="inDrive API",
     description="API для анализа состояния автомобилей: определение повреждений, загрязнений и царапин",
     version="1.0.0"
 )
